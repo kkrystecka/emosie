@@ -1,7 +1,8 @@
 import os
+import sys
+import tempfile
 import numpy as np
 import matplotlib.pyplot as plt
-
 
 def plot_decision(X, y, clf=None, cm=None):
     assert X.ndim == 2
@@ -76,3 +77,17 @@ def load_images(img_dir, n_images=1000, resize=(50, 50)):
     y = np.array(y)
     imgs = np.stack(imgs, axis=0)
     return imgs, y
+
+
+def apply_modifications(model, custom_objects=None):
+    """
+    Poprawiona wersja apply_modifications biblioteki keras_vis.
+    (na githubie jest poprawna wersja ale na pip nie)
+    """
+    from keras.models import load_model
+    fname = next(tempfile._get_candidate_names()) + '.h5'
+    model_path = os.path.join(tempfile.gettempdir(), fname)
+    model.save(model_path)
+    new_model = load_model(model_path, custom_objects=custom_objects)
+    os.remove(model_path)
+    return new_model
