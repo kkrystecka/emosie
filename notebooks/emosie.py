@@ -4,6 +4,7 @@ import tempfile
 import numpy as np
 import matplotlib.pyplot as plt
 
+
 def plot_decision(X, y, clf=None, cm=None):
     assert X.ndim == 2
 
@@ -91,3 +92,58 @@ def apply_modifications(model, custom_objects=None):
     new_model = load_model(model_path, custom_objects=custom_objects)
     os.remove(model_path)
     return new_model
+
+
+def show_rgb_layers(image, style='light', subplots_args=dict()):
+    '''
+    Show RGB layers of the image on separate axes.
+    '''
+    im_shape = image.shape
+    assert im_shape[-1] == 3
+    assert image.ndim == 3
+
+    if style == 'light':
+        cmaps = ['Reds', 'Greens', 'Blues']
+
+    fig, ax = plt.subplots(ncols=3, **subplots_args)
+    for layer in range(3):
+        if style == 'light':
+            ax[layer].imshow(image[..., layer], cmap=cmaps[layer])
+        else:
+            temp_img = np.zeros(im_shape[:2] + (3,))
+            temp_img[..., layer] = image[..., layer]
+            ax[layer].imshow(temp_img)
+        ax[layer].axis('off')
+
+    return fig
+
+
+def extract_features(X, model, batch_size=20):
+    n_stars = 0
+    sample_count = X.shape[0]
+    model_shape = (shp.value for shp in model.layers[-1].output.shape[:])
+    output_shape = (sample_count,) + tuple(shp for shp in model_shape
+                                           if shp is not None)
+    features = np.zeros(shape=output_shape)
+
+    n_full_bathes = sample_count // batch_size
+    for batch_idx in range(n_full_bathes):
+        slc = slice(batch_idx * batch_size, (batch_idx + 1) * batch_size)
+        features_batch = model.predict(X[slc])
+        features[slc] = features_batch
+
+        # progressbar
+        print('*', end='')
+        n_stars += 1
+        if n_stars == 50:
+            n_stars = 0
+            print('')
+
+    left_out = sample_count - n_full_bathes * batch_size
+    if left_out > 0:
+        slc = slice(n_full_bathes * batch_size, None)
+        features_batch = model.predict(X[slc])
+        features[slc] = features_batch
+
+    features = features.reshape((sample_count, -1))
+    return features
