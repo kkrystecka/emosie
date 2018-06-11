@@ -5,7 +5,24 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
+# - [ ] dodać funkcję do wyświetlania błędów i poprawnych
+#       odpowiedzi sieci
+
 def plot_decision(X, y, clf=None, cm=None):
+    '''
+    Plot decision function of a given classifier.
+
+    Parameters
+    ----------
+    X : 2d numpy array
+        Array in classical sklearn format (observations, features).
+    y : 1d numpy array
+        Correct class membership.
+    clf : sklearn classifier or Keras model
+        Classifier used in predicting class membership.
+    cm : colormap
+        Colormap to use for class probabilities.
+    '''
     assert X.ndim == 2
 
     if clf is not None:
@@ -50,6 +67,9 @@ def plot_decision(X, y, clf=None, cm=None):
 
 
 def load_images(img_dir, n_images=1000, resize=(50, 50)):
+    '''
+    Load images of cats and dogs and organize into sklearn-like format.
+    '''
     from keras.preprocessing.image import load_img, img_to_array
 
     images = os.listdir(img_dir)
@@ -119,6 +139,9 @@ def show_rgb_layers(image, style='light', subplots_args=dict()):
 
 
 def extract_features(X, model, batch_size=20):
+    '''
+    Use a trained model to extract features from training examples.
+    '''
     n_stars = 0
     sample_count = X.shape[0]
     model_shape = (shp.value for shp in model.layers[-1].output.shape[:])
@@ -147,3 +170,208 @@ def extract_features(X, model, batch_size=20):
 
     features = features.reshape((sample_count, -1))
     return features
+
+
+def show_image_predictions(X, y, model=None, predictions=None):
+    if model is not None and not (predictions is not None):
+        predictions = model.predict(X)
+    if_correct = np.round(predictions).ravel() == y
+    incorrect_predictions = np.where(if_correct == 0)[0]
+
+    # FIXME: change the code below:
+    # znajdujemy poprawne przewidywania oraz obliczamy pewność
+    confidence = np.abs(predictions.ravel() - 0.5) * 2
+    correct_predictions = np.where(if_correct)[0]
+    confidence_for_correct_predictions = confidence[correct_predictions]
+
+    # znajdujemy poprawne przedidywania z wysoką pewnością
+    high_confidence = np.where(confidence_for_correct_predictions > 0.75)[0]
+    correct_high_confidence = correct_predictions[high_confidence]
+
+    # wyświetlamy
+    fig, ax = plt.subplots(ncols=6, nrows=3, figsize=(14, 8))
+    ax = ax.ravel()
+
+    for idx in range(3 * 6):
+        img_idx = correct_high_confidence[idx]
+        ax[idx].imshow(X_test[img_idx])
+        ax[idx].set_title('{:.2f}%'.format(predictions[img_idx, 0] * 100))
+        ax[idx].axis('off')
+
+
+def test_ipyvolume():
+    import ipyvolume as ipv
+
+    s = 1/2**0.5
+    # 4 vertices for the tetrahedron
+    x = np.array([1.,  -1, 0,  0])
+    y = np.array([0,   0, 1., -1])
+    z = np.array([-s, -s, s, s])
+    # and 4 surfaces (triangles), where the number refer to the vertex index
+    triangles = [(0, 1, 2), (0, 1, 3), (0, 2, 3), (1, 3, 2)]
+
+    ipv.figure()
+    # draw the tetrahedron mesh
+    ipv.plot_trisurf(x, y, z, triangles=triangles, color='orange')
+    # mark the vertices
+    ipv.scatter(x, y, z, marker='sphere', color='blue')
+    # set limits and show
+    ipv.xyzlim(-2, 2)
+    ipv.show()
+
+
+def read_brainnetviewer_surface(file):
+    '''
+    Read surface file stored in BrainNetViewer format.
+
+    Parameters
+    ----------
+    file : string
+        Name of the file to read.
+
+    Returns
+    -------
+    x, y, z : numpy arrays
+        Arrays representing x, y and z coordinates of vertices.
+    tri : numpy array
+        Triangle definition: each row of tri array represents one triangle
+        and the three columns correspond to indices of the three triangle
+        vertices.
+    '''
+    with open(file) as fid:
+        mode = 'start'
+        x, y, z = list(), list(), list()
+        tri = list()
+
+        for line in fid.readlines():
+            if line[0] == '#':
+                continue
+
+            line = line.replace('\n', '')
+            split = line.split(' ')
+            if mode == 'start' and len(split) == 3:
+                mode = 'coord'
+            elif mode == 'coord' and len(split) < 3:
+                mode = 'mid'
+            elif mode == 'mid' and len(split) == 3:
+                mode = 'tri'
+
+            if mode == 'coord' and len(split) == 3:
+                [lst.append(float(x)) for x, lst in zip(split, [x, y, z])]
+            if mode == 'tri' and len(split) == 3:
+                tri.append([int(x) - 1 for x in split])
+    tri = np.array(tri, dtype='int')
+    x = np.array(x)
+    y = np.array(y)
+    z = np.array(z)
+    return x, y, z, tri
+
+
+def read_brainnetviewer_nodes(file):
+    with open(file) as f:
+        xyz, label, size, name = list(), list(), list(), list()
+        for line in f.readlines():
+            split = line.replace('\n', '').split('\t')
+            if len(split) == 6:
+                xyz.append([float(x) for x in split[:3]])
+                label.append(int(split[3]))
+                size.append(float(split[4]))
+                name.append(split[-1])
+        xyz = np.array(xyz)
+        label = np.array(label)
+        size = np.array(size)
+    return xyz, label, size, name
+
+
+def read_fibers(file):
+    with open(file) as f:
+        fibers = list()
+        for line in f.readlines():
+            splt = line.replace('\n', '').split('   ')
+            fibers.append([int(float(x)) for x in splt[1:]])
+
+        return np.array(fibers)
+
+
+def read_brain(data_dir=None, surface=None, nodes=None):
+    if data_dir is None: data_dir = os.getcwd()
+    if surface is None: surface = 'BrainMesh_Ch2.nv'
+    if nodes is None: nodes = 'Node_AAL90.node'
+
+    surface_file = os.path.join(data_dir, surface)
+    x, y, z, tri = read_brainnetviewer_surface(surface_file)
+    nodes_file = os.path.join(data_dir, nodes)
+    xyz, label, size, name = read_brainnetviewer_nodes(nodes_file)
+
+    brain = dict()
+    brain['surface'] = dict(x=x, y=y, z=z, tri=tri)
+    brain['nodes'] = dict(xyz=xyz, label=label, size=size, name=name)
+    return brain
+
+
+def plot_brain(brain, surface='dots', nodes=True, node_colors=False,
+               node_groups=None, surface_color=None, node_color='red',
+               network=None, dot_size=0.1, dot_color='gray', min_fibers=10,
+               max_fibers=500, lowest_cmap_color=0.2, highest_cmap_color=0.7,
+               cmap='rocket', background='light'):
+    import ipyvolume as ipv
+
+    if surface_color is None:
+        if surface == 'dots': surface_color = 'gray'
+        elif surface == 'full': surface_color = 'orange'
+
+    if isinstance(node_colors, bool) and node_colors:
+        node_colors = ['red', 'green', 'blue', 'violet', 'yellow']
+
+    if node_colors and node_groups is None:
+        node_groups = brain['nodes']['label']
+
+    fig = ipv.figure()
+
+    # plot surface
+    x, y, z = [brain['surface'][key] for key in list('xyz')]
+    if surface == 'dots':
+        ipv.scatter(x, y, z, marker='box', color=dot_color, size=dot_size)
+    elif surface == 'full':
+        ipv.plot_trisurf(x, y, z, triangles=brain['surface']['tri'],
+                         color=surface_color)
+
+    # plot nodes
+    if nodes:
+        xyz = brain['nodes']['xyz']
+        if node_colors:
+            for label_idx, color in zip(np.unique(node_groups), node_colors):
+                mask = node_groups == label_idx
+                ipv.scatter(xyz[mask, 0], xyz[mask, 1], xyz[mask, 2],
+                            marker='sphere', color=color, size=1.5)
+        else:
+             ipv.scatter(xyz[:, 0], xyz[:, 1], xyz[:, 2], marker='sphere',
+                         color=node_color, size=1.5)
+
+    # plot connections
+    if network is not None:
+        x, y, z = brain['nodes']['xyz'].T
+        scaling = highest_cmap_color - lowest_cmap_color
+        min_fibers_log = np.log(min_fibers)
+        max_fibers_log = np.log(max_fibers)
+        if hasattr(plt.cm, cmap):
+            cmp = getattr(plt.cm, cmap)
+        else:
+            import seaborn as sns
+            cmp = getattr(sns.cm, cmap)
+
+        with fig.hold_sync():
+            for ii in range(89):
+                for jj in range(ii, 90):
+                    if network[ii, jj] > min_fibers:
+                        float_color = (min(np.log((network[ii, jj] - min_fibers))
+                                       / (max_fibers_log - min_fibers_log),
+                                       1.) * scaling + lowest_cmap_color)
+                        line_color = cmp(float_color)
+                        ipv.plot(x[[ii, jj]], y[[ii, jj]], z[[ii, jj]],
+                                 color=line_color[:3])
+
+    ipv.squarelim()
+    ipv.style.use([background, 'minimal'])
+    ipv.show()
+    return fig
